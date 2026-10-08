@@ -10,7 +10,7 @@
 node server.mjs
 ```
 
-打开 http://127.0.0.1:8787 ，首次访问设置至少 12 个字符的密码。macOS 也可运行 `sh scripts/start-local.sh`，它会优先使用本机 Node.js，必要时使用已安装的 Codex 运行时。
+打开 http://127.0.0.1:8793 ，首次访问设置至少 12 个字符的密码。macOS 也可运行 `sh scripts/start-local.sh`，它会优先使用本机 Node.js，必要时使用已安装的 Codex 运行时。
 
 数据库默认在 `data/journal.sqlite`，属于私密本地数据，已加入 `.gitignore`。网页静态资源严格限定在 `public/`，数据库和配置不能通过 URL 下载。首次初始化可读取 `data/seed.json`，格式为下述对象数组，只导入一次。
 
@@ -46,6 +46,16 @@ node server.mjs
 5. 在 HTTPS 网站输入令牌并自行设置密码，完成个人账户初始化。设置后旧令牌不能再初始化账户。
 
 正式模式设置 `NODE_ENV=production`，会启用 Secure / HttpOnly / SameSite 会话 Cookie、首次设置令牌，以及请求来源和 CSRF 校验。HTTPS 反向代理应覆盖传入的 `X-Real-IP`；应用容器不向公网映射自身端口。登录尝试按地址限速。密码使用带随机盐的 scrypt 哈希保存。
+
+### 暂无域名：SSH 隧道
+
+可使用 `compose.tunnel.yaml`，服务只监听服务器回环地址，不占用其他网站端口，也不把登录表单公开在 HTTP 上。服务器上先创建 `data/`，让容器 UID 1000 可写，再执行 `docker compose -f compose.tunnel.yaml up -d --build`。本机运行：
+
+```sh
+ssh -N -L 8794:127.0.0.1:8793 <user>@<server>
+```
+
+打开 http://127.0.0.1:8794 。首次设置仍需服务器数据目录里的令牌。浏览器需要支持安全 Cookie 的 loopback 例外（当前 Chromium 支持）；本机到服务器之间由 SSH 加密。关闭隧道后该地址不可用，跨设备也需要建立自己的隧道。若需要手机直接访问，应配置域名与 HTTPS 后改用正式反向代理部署。已有网站占用 80/443 时，须接入现有反向代理或使用不冲突的监听地址，不可直接启动默认代理抢占端口。
 
 不要提交 `.env`、`data/`、数据库、备份、测量种子、登录令牌或包含个人数据的截图。源代码与实际测量数据分开管理。
 

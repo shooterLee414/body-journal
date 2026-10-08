@@ -113,7 +113,7 @@ const server=http.createServer(async(req,res)=>{
  }catch(e){if(e instanceof InputError)return json(res,400,{error:e.message});console.error('Request failed:',e.message);return json(res,500,{error:'保存失败，请稍后重试。已有记录不会被覆盖。'});}
 });
 server.requestTimeout=15000;server.headersTimeout=10000;server.keepAliveTimeout=5000;server.maxHeadersCount=40;
-const port=Number(process.env.PORT||8787),host=process.env.HOST||'127.0.0.1';
+const port=Number(process.env.PORT||8793),host=process.env.HOST||'127.0.0.1';
 server.listen(port,host,()=>console.log(`Body Journal running at http://${host}:${server.address().port}`));
 setInterval(()=>{db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());for(const [k,v]of attempts)if(v.until<Date.now())attempts.delete(k);},3600000).unref();
 process.on('SIGTERM',()=>server.close(()=>{db.close();process.exit(0);}));

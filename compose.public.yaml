@@ -5,11 +5,11 @@ services:
     environment:
       TRUST_PROXY: "1"
       RESERVED_USERNAME: ${RESERVED_USERNAME:-}
-      PUBLIC_URL: https://${DOMAIN:?Set DOMAIN in .env}
+      PUBLIC_URL: https://${PUBLIC_IP:?Set PUBLIC_IP in .env}
+    ports:
+      - '127.0.0.1:8793:8787'
     volumes:
-      - journal-data:/app/data
-    expose:
-      - '8787'
+      - ./data:/app/data
     read_only: true
     tmpfs:
       - /tmp
@@ -18,21 +18,21 @@ services:
     cap_drop:
       - ALL
   proxy:
-    image: caddy:2-alpine
+    image: caddy:2.11.7-alpine
     restart: unless-stopped
     environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      PUBLIC_IP: ${PUBLIC_IP:?Set PUBLIC_IP in .env}
     ports:
-      - '80:80'
       - '443:443'
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/Caddyfile.ip:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       app:
         condition: service_healthy
 volumes:
-  journal-data:
   caddy-data:
   caddy-config:

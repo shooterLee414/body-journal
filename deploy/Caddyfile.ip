@@ -1,0 +1,21 @@
+{
+	auto_https disable_redirects
+	default_sni {$PUBLIC_IP}
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$PUBLIC_IP} {
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			profile shortlived
+			disable_http_challenge
+		}
+	}
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy app:8787 {
+		header_up X-Real-IP {remote_host}
+	}
+}

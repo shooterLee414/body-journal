@@ -14,8 +14,8 @@ test('private persistent records, parsing, replay safety, edits and export',asyn
  const call=async(url,method='GET',payload,overrides={})=>{const res=await fetch(origin+url,{method,headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':csrf,...overrides},body:payload===undefined?undefined:JSON.stringify(payload)});return res;};
  assert.equal((await call('/api/records')).status,401);
  assert.equal((await call('/data/journal.sqlite')).status,404);
- assert.equal((await call('/api/setup','POST',{password:'test-password-only-123'},{Origin:'https://evil.example'})).status,403);
- const setup=await call('/api/setup','POST',{password:'test-password-only-123'});assert.equal(setup.status,200);cookie=setup.headers.get('set-cookie').split(';')[0];csrf=(await setup.json()).csrf;
+ assert.equal((await call('/api/register','POST',{username:'TestOwner',password:'test-password-only-123'},{Origin:'https://evil.example'})).status,403);
+ const setup=await call('/api/register','POST',{username:'TestOwner',password:'test-password-only-123'});assert.equal(setup.status,200);cookie=setup.headers.get('set-cookie').split(';')[0];csrf=(await setup.json()).csrf;
  assert.equal((await call('/api/records','POST',{text:'75.2',requestId:'request-111111111111'},{'X-CSRF-Token':'wrong'})).status,403);
  const input={text:'2020-10-08 08:00 体重 75.2，腰围84',requestId:'request-111111111111'};
  assert.equal((await call('/api/records','POST',input)).status,201);
@@ -29,5 +29,5 @@ test('private persistent records, parsing, replay safety, edits and export',asyn
  const db=new DatabaseSync(path.join(dir,'journal.sqlite'));assert.equal(db.prepare('SELECT COUNT(*) AS n FROM revisions').get().n,1);db.close();
  const csv=await (await call('/api/export')).text();assert.ok(csv.includes('83.5'));assert.ok(csv.includes('体重'));
  await call('/api/logout','POST',{});assert.equal((await call('/api/records')).status,401);
- const login=await call('/api/login','POST',{password:'test-password-only-123'});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];assert.equal((await (await call('/api/records')).json()).records.length,2);
+ const login=await call('/api/login','POST',{username:'TestOwner',password:'test-password-only-123'});assert.equal(login.status,200);cookie=login.headers.get('set-cookie').split(';')[0];assert.equal((await (await call('/api/records')).json()).records.length,2);
 });

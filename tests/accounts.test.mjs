@@ -52,7 +52,7 @@ test('migration preserves legacy rows and invalidates old global sessions; resta
  CREATE TABLE sessions(token TEXT PRIMARY KEY,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
  INSERT INTO records VALUES ('old-row','2020-01-01T08:00:00+08:00',77,NULL,'old-data','import','created','updated');
  INSERT INTO sessions VALUES ('old-session','csrf',9999999999999);`);db.close();
- const one=await start(t,dir);db=new DatabaseSync(file);assert.equal(db.prepare('SELECT weight,userId FROM records').get().weight,77);assert.equal(db.prepare('SELECT userId FROM records').get().userId,null);assert.equal(db.prepare('SELECT userId FROM sessions').get().userId,null);db.close();
+ const one=await start(t,dir);db=new DatabaseSync(file);assert.equal(db.prepare('SELECT weight,userId,mealContext FROM records').get().weight,77);assert.equal(db.prepare('SELECT userId FROM records').get().userId,null);assert.equal(db.prepare('SELECT mealContext FROM records').get().mealContext,null);assert.equal(db.prepare('SELECT userId FROM sessions').get().userId,null);db.close();
  await new Promise(resolve=>{one.child.once('exit',resolve);one.child.kill('SIGTERM');});
- const two=await start(t,dir);assert.equal((await client(two.origin)('/api/records')).status,401);db=new DatabaseSync(file);assert.equal(db.prepare('SELECT count(*) n FROM schema_migrations').get().n,1);assert.equal(db.prepare('SELECT count(*) n FROM records').get().n,1);db.close();
+ const two=await start(t,dir);assert.equal((await client(two.origin)('/api/records')).status,401);db=new DatabaseSync(file);assert.equal(db.prepare('SELECT count(*) n FROM schema_migrations').get().n,2);assert.equal(db.prepare('SELECT count(*) n FROM records').get().n,1);db.close();
 });

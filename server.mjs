@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {parseInput,validateMeasurement,InputError} from './parser.mjs';
+import {migrateMealContext} from './migrations.mjs';
 import {migrateAccounts,normalizeUsername,passwordHash,verifyPassword,validPassword} from './accounts.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const data=path.resolve(process.env.DATA_DIR||path.join(root,'data'));
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS revisions(id INTEGER PRIMARY KEY,recordId TEXT NOT NU
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS requests(key TEXT PRIMARY KEY,response TEXT NOT NULL,createdAt INTEGER NOT NULL);`);
 migrateAccounts(db);
+migrateMealContext(db);
 try{fs.chmodSync(path.join(data,'journal.sqlite'),0o600);}catch{}
 const getSetting=k=>db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value;
 const setSetting=(k,v)=>db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)').run(k,v);
@@ -31,8 +33,8 @@ if(!getSetting('seeded')){
     try{for(const r of records){validateMeasurement(r);const now=new Date().toISOString();db.prepare('INSERT INTO records(id,measuredAt,weight,waist,source,timeSource,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?)').run(crypto.randomUUID(),r.measuredAt,r.weight,r.waist,r.source||'导入记录','import',now,now);}setSetting('seeded','1');db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
   }
 }
-const insert=db.prepare('INSERT INTO records(id,measuredAt,weight,waist,source,timeSource,createdAt,updatedAt,userId) VALUES (?,?,?,?,?,?,?,?,?)');
-const readRecords=userId=>db.prepare('SELECT id,measuredAt,weight,waist,source,timeSource,createdAt,updatedAt FROM records WHERE userId=? ORDER BY measuredAt,rowid').all(userId);
+const insert=db.prepare('INSERT INTO records(id,measuredAt,weight,waist,source,timeSource,createdAt,updatedAt,userId,mealContext) VALUES (?,?,?,?,?,?,?,?,?,?)');
+const readRecords=userId=>db.prepare('SELECT id,measuredAt,weight,waist,source,timeSource,createdAt,updatedAt,mealContext FROM records WHERE userId=? ORDER BY measuredAt,rowid').all(userId);
 function limitAuth(req,usernameKey){
  const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-real-ip']||req.socket.remoteAddress):req.socket.remoteAddress;
  const keys=[[hash('ip:'+String(ip)),30],[hash('account:'+usernameKey),10]],now=Date.now();
@@ -83,7 +85,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'&&url.pathname==='/api/logout'){db.prepare('DELETE FROM sessions WHERE token=?').run(s.token);res.setHeader('Set-Cookie',`${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${prod?'; Secure':''}`);return json(res,200,{ok:true});}
   if(req.method==='GET'&&url.pathname==='/api/records')return json(res,200,{records:readRecords(s.userId)});
   if(req.method==='GET'&&url.pathname==='/api/export'){
-    const rows=[['日期','测量时间（北京时间）','体重（kg）','腰围（cm）','原始记录'],...readRecords(s.userId).map(r=>[r.measuredAt.slice(0,10),r.measuredAt.slice(11,16),r.weight,r.waist,r.source])];
+    const rows=[['日期','测量时间（北京时间）','体重（kg）','腰围（cm）','原始记录','测量标注'],...readRecords(s.userId).map(r=>[r.measuredAt.slice(0,10),r.measuredAt.slice(11,16),r.weight,r.waist,r.source,r.mealContext==='after_meal'?'饭后':'未标注'])];
     res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="body-journal.csv"','Cache-Control':'no-store'});return res.end('\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n'));
   }
   if(req.method==='POST'&&url.pathname==='/api/records'){
@@ -91,20 +93,20 @@ const server=http.createServer(async(req,res)=>{
     if(typeof b.requestId!=='string'||!/^[a-zA-Z0-9-]{16,80}$/.test(b.requestId))throw new InputError('请求标识缺失，请刷新页面后重试。');
     const prior=db.prepare('SELECT response FROM user_requests WHERE userId=? AND key=?').get(s.userId,b.requestId);
     if(prior)return json(res,200,JSON.parse(prior.response));
-    const records=b.text!==undefined?parseInput(b.text):[validateMeasurement({measuredAt:b.measuredAt,weight:b.weight??null,waist:b.waist??null,source:'手动记录',timeSource:'explicit'})];
+    const records=b.text!==undefined?parseInput(b.text):[validateMeasurement({measuredAt:b.measuredAt,weight:b.weight??null,waist:b.waist??null,source:'手动记录',timeSource:'explicit',mealContext:b.mealContext})];
     const created=records.map(r=>({...r,id:crypto.randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}));
     const result={records:created};
     db.exec('BEGIN IMMEDIATE');
-    try{for(const r of created)insert.run(r.id,r.measuredAt,r.weight,r.waist,r.source,r.timeSource,r.createdAt,r.updatedAt,s.userId);db.prepare('INSERT INTO user_requests(userId,key,response,createdAt) VALUES (?,?,?,?)').run(s.userId,b.requestId,JSON.stringify(result),Date.now());db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+    try{for(const r of created)insert.run(r.id,r.measuredAt,r.weight,r.waist,r.source,r.timeSource,r.createdAt,r.updatedAt,s.userId,r.mealContext);db.prepare('INSERT INTO user_requests(userId,key,response,createdAt) VALUES (?,?,?,?)').run(s.userId,b.requestId,JSON.stringify(result),Date.now());db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
     return json(res,201,result);
   }
   const edit=url.pathname.match(/^\/api\/records\/([a-f0-9-]{36})$/);
   if(req.method==='PATCH'&&edit){
     const b=await body(req),old=db.prepare('SELECT * FROM records WHERE id=? AND userId=?').get(edit[1],s.userId);if(!old)return json(res,404,{error:'记录不存在。'});
     if(b.updatedAt!==old.updatedAt)return json(res,409,{error:'记录已在其他页面更新，请刷新后再试。'});
-    const r=validateMeasurement({measuredAt:b.measuredAt,weight:b.weight??null,waist:b.waist??null});
+    const r=validateMeasurement({measuredAt:b.measuredAt,weight:b.weight??null,waist:b.waist??null,mealContext:b.mealContext===undefined?old.mealContext:b.mealContext});
     const now=new Date().toISOString();db.exec('BEGIN IMMEDIATE');
-    try{db.prepare('INSERT INTO revisions(recordId,previous,changedAt) VALUES (?,?,?)').run(old.id,JSON.stringify(old),now);db.prepare('UPDATE records SET measuredAt=?,weight=?,waist=?,updatedAt=? WHERE id=? AND userId=?').run(r.measuredAt,r.weight,r.waist,now,old.id,s.userId);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+    try{db.prepare('INSERT INTO revisions(recordId,previous,changedAt) VALUES (?,?,?)').run(old.id,JSON.stringify(old),now);db.prepare('UPDATE records SET measuredAt=?,weight=?,waist=?,updatedAt=?,mealContext=? WHERE id=? AND userId=?').run(r.measuredAt,r.weight,r.waist,now,r.mealContext,old.id,s.userId);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
     return json(res,200,{ok:true});
   }
   return json(res,404,{error:'接口不存在。'});

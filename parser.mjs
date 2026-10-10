@@ -16,6 +16,8 @@ const num='[0-9零〇一二两三四五六七八九十百]+(?:[.点][0-9零〇�
 const int='[0-9零〇一二两三四五六七八九十]+';
 const pad=x=>String(x).padStart(2,'0');
 export function validateMeasurement(m) {
+  m.mealContext=m.mealContext??null;
+  if(m.mealContext!==null&&m.mealContext!=='after_meal')throw new InputError('测量标注不正确，请选择未标注或饭后。');
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(m.measuredAt)) throw new InputError('请选择完整的测量日期和时间。');
   const d=new Date(m.measuredAt);
   if(!Number.isFinite(+d)||localParts(d).date+'T'+localParts(d).time+':00+08:00'!==m.measuredAt) throw new InputError('日期或时间不存在，请检查。');
@@ -32,6 +34,10 @@ export function parseLine(input, now = new Date()) {
   text=text.replace(new RegExp(`((?:体重|腰围)\\s*(?:是|为|到了|到|[:：=])?\\s*)(${num})`,'g'),(_,prefix,value)=>prefix+cn(value));
   if(!text || text.length>500) throw new InputError('每条记录请控制在 500 字以内。');
   if(/[?？]|多少|怎么|是否|如果|目标|希望|计划|想要|不记|没测|没有|不是|改成|修改|更正|删除|预计|应该|大概|可能|左右|不要|吗|么/.test(text)) throw new InputError('这句话包含提问、目标或更正意图，未保存。请直接报告测量值；更正已有记录请使用表格中的编辑按钮。');
+  const mealPattern=/(?:早|午|晚)?(?:饭|餐)后|吃完(?:早|午|晚)?饭(?:后)?/g;
+  const mealContext=mealPattern.test(text)?'after_meal':null;
+  if(mealContext&&/饭前|餐前|空腹|(?:没|未|不)\s*(?:吃|饭|餐)/.test(text))throw new InputError('饭后标注有歧义，请每行只报告一次测量，并明确是否饭后。');
+  text=text.replace(mealPattern,'');
   const current=localParts(now);
   let date=current.date,time='08:00',timeSource='default';
   if(/现在|刚刚|刚测|此刻/.test(text)) {time=current.time;timeSource='now';text=text.replace(/现在|刚刚|刚测|此刻/g,'');}
@@ -70,7 +76,7 @@ export function parseLine(input, now = new Date()) {
   if(!Number.isFinite(+d)||localParts(d).date!==date||localParts(d).time!==time)throw new InputError('日期或时间不存在，请检查。');
   for(const [v,min,max,label] of [[weight,20,400,'体重'],[waist,20,250,'腰围']])if(v!==null&&(!Number.isFinite(v)||v<min||v>max))throw new InputError(`${label}超出可记录范围，请检查数值和单位。`);
   if(+d>+now+5*60000 && !(timeSource==='default'&&date===current.date&&time==='08:00'))throw new InputError('不能记录未来的测量，请检查日期和时间。');
-  return {measuredAt,weight:weight===null?null:Math.round(weight*100)/100,waist:waist===null?null:Math.round(waist*100)/100,source,timeSource};
+  return {measuredAt,weight:weight===null?null:Math.round(weight*100)/100,waist:waist===null?null:Math.round(waist*100)/100,source,timeSource,mealContext};
 }
 export function parseInput(text,now=new Date()){
   if(typeof text!=='string'||text.length>3000)throw new InputError('输入过长，请分批记录。');

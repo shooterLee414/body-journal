@@ -15,3 +15,13 @@ test('invalid dates, times, goals, negatives and ambiguities are rejected',()=>{
 test('same value repeated is valid input',()=>{assert.equal(parseInput('75.1\n75.1',now).length,2);});
 test('near midnight preserves date',()=>{const r=parseLine('现在 75',new Date('2026-10-08T16:01:00Z'));assert.equal(r.measuredAt,'2026-10-09T00:01:00+08:00');});
 test('default 08:00 convention also works before 08:00',()=>{const r=parseLine('75.2',new Date('2026-10-07T23:00:00Z'));assert.equal(r.measuredAt,'2026-10-08T08:00:00+08:00');});
+
+test('meal context is explicit, per measurement, and does not change time rules',()=>{
+ for(const text of ['饭后75.2','餐后 75.2','午饭后75.2','吃完饭 75.2']){
+  const r=parseLine(text,now);assert.equal(r.mealContext,'after_meal');assert.equal(r.weight,75.2);assert.equal(r.measuredAt,'2026-10-08T08:00:00+08:00');
+ }
+ const r=parseLine('现在饭后体重75.2，腰围84',now);assert.equal(r.mealContext,'after_meal');assert.equal(r.measuredAt,'2026-10-08T23:40:00+08:00');assert.equal(r.waist,84);
+ assert.equal(parseLine('昨天晚上八点半，餐后腰围84',now).mealContext,'after_meal');
+ assert.deepEqual(parseInput('饭后75.2\n75.2',now).map(r=>r.mealContext),['after_meal',null]);
+ for(const text of ['不是饭后75.2','还没吃完饭75.2','空腹饭后75.2','饭前饭后75.2'])assert.throws(()=>parseLine(text,now),text);
+});

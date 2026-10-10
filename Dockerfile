@@ -1,6 +1,6 @@
 FROM node:24-alpine
 WORKDIR /app
-COPY --chown=node:node package.json server.mjs parser.mjs accounts.mjs ./
+COPY --chown=node:node package.json server.mjs parser.mjs accounts.mjs migrations.mjs ./
 COPY --chown=node:node public ./public
 COPY --chown=node:node scripts ./scripts
 RUN mkdir -p /app/data && chown node:node /app/data
